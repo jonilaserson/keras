@@ -14,7 +14,7 @@ from six.moves import range
     Can easily be extended to include new transforms, new preprocessing methods, etc...
 '''
 
-def random_rotation(x, rg, fill_mode="nearest", cval=0.):
+def random_rotation(x, rg, fill_mode="constant", cval=0.):
     angle = random.uniform(-rg, rg)
     x = ndimage.interpolation.rotate(x, angle, axes=(1,2), reshape=False, mode=fill_mode, cval=cval)
     return x
@@ -44,14 +44,10 @@ def random_shift(x, wrg, hrg, fill_mode="nearest", cval=0.):
     return x
 
 def horizontal_flip(x):
-    for i in range(x.shape[0]):
-        x[i] = np.fliplr(x[i])
-    return x
+    return x[:, :, ::-1]
 
 def vertical_flip(x):
-    for i in range(x.shape[0]):
-        x[i] = np.flipud(x[i])
-    return x
+    return x[:, ::-1, :]
 
 
 def random_barrel_transform(x, intensity):
@@ -123,7 +119,7 @@ class ImageDataGenerator(object):
         realtime data augmentation.
     '''
     def __init__(self, 
-            featurewise_center=True, # set input mean to 0 over the dataset
+            featurewise_center=False, # set input mean to 0 over the dataset
             samplewise_center=False, # set each sample mean to 0
             featurewise_std_normalization=True, # divide inputs by std of the dataset
             samplewise_std_normalization=False, # divide each input by its std
@@ -141,7 +137,8 @@ class ImageDataGenerator(object):
         self.principal_components = None
 
 
-    def flow(self, X, y, batch_size=32, shuffle=False, seed=None, save_to_dir=None, save_prefix="", save_format="jpeg"):
+    def flow(self, X, y, batch_size=32, shuffle=False, seed=None, save_to_dir=None, 
+             save_prefix="", save_format="jpeg", whole_batch_trasform = True):
         if seed:
             random.seed(seed)
 
@@ -160,12 +157,16 @@ class ImageDataGenerator(object):
             else:
                 nb_samples = batch_size
 
-            bX = np.zeros(tuple([nb_samples]+list(X.shape)[1:]))
-            for i in range(nb_samples):
-                x = X[b*batch_size+i]
-                x = self.random_transform(x.astype("float32"))
-                x = self.standardize(x)
-                bX[i] = x
+            bX = X[b*batch_size : b*batch_size + nb_samples].astype("float32")            
+            if whole_batch_trasform:
+                bX = bX.reshape(-1, bX.shape[-2], bX.shape[-1])
+                bX[:] = self.standardize(bX)
+                bX[:] = self.random_transform(bX)
+                bX = bX.reshape(nb_samples, -1, bX.shape[-2], bX.shape[-1])
+            else:                        
+                for i in range(nb_samples):
+                    bX[i] = self.standardize(bX[i])
+                    bX[i] = self.random_transform(bX[i])
 
             if save_to_dir:
                 for i in range(nb_samples):
