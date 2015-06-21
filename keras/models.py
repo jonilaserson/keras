@@ -89,6 +89,9 @@ class Model(object):
             updates=updates, allow_input_downcast=True, mode=theano_mode)
         self._predict = theano.function(predict_ins, self.y_test, 
             allow_input_downcast=True, mode=theano_mode)
+        self._predict_layer = theano.function(predict_ins, 
+                                               self.get_output(train=False, layer=-4), 
+                                               allow_input_downcast=True, mode=theano_mode)                              
         self._test = theano.function(test_ins, test_score, 
             allow_input_downcast=True, mode=theano_mode)
         self._test_with_acc = theano.function(test_ins, [test_score, test_accuracy], 
@@ -207,14 +210,19 @@ class Model(object):
         # return history
         return callbacks.callbacks[-1]
 
-    def predict(self, X, batch_size=128, verbose=1):
+    def predict(self, X, batch_size=128, verbose=1, layer=-1):
+        if layer == -1:
+            pred_func = self._predict
+        else:
+            pred_func = self._predict_layer
+                
         X = standardize_X(X)
         batches = make_batches(len(X[0]), batch_size)
         if verbose == 1:
             progbar = Progbar(target=len(X[0]))
         for batch_index, (batch_start, batch_end) in enumerate(batches):
             X_batch = slice_X(X, batch_start, batch_end)
-            batch_preds = self._predict(*X_batch)
+            batch_preds = pred_func(*X_batch)
 
             if batch_index == 0:
                 shape = (len(X[0]),) + batch_preds.shape[1:]

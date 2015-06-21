@@ -36,9 +36,9 @@ class Sequential(Layer):
         self.regularizers += regularizers
         self.constraints += constraints
 
-    def get_output(self, train=False):
-        return self.layers[-1].get_output(train)
-
+    def get_output(self, train=False, layer=-1):
+        return self.layers[layer].get_output(train)
+        
     def get_input(self, train=False):
         if not hasattr(self.layers[0], 'input'):
             for l in self.layers:
