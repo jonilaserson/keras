@@ -277,6 +277,18 @@ class Dense(Layer):
             "activation":self.activation.__name__}
 
 
+class LinearSum(Layer):
+    '''
+        Joni's sum.
+    '''
+    def __init__(self):
+        super(LinearSum,self).__init__()
+
+    def get_output(self, train):
+        X = self.get_input(train)
+        return X.sum(axis=1, keepdims=True)
+
+
 class TimeDistributedDense(Layer):
     '''
        Apply a same DenseLayer for each dimension[1] (shared_dimension) input
