@@ -5,7 +5,18 @@ import numpy as np
 from six.moves import range
 
 epsilon = 1.0e-9
-
+   
+def bbox_mass(y_true, y_pred, weight=None):
+    m_true = y_true[:, 1:]
+    y_true = y_true[:, 0]
+    if weight is None:
+        return T.sqr( (y_pred * (1-m_true)).sum(axis=1)).mean() + \
+            T.sqr( y_pred.sum(axis=1) - y_true).mean()
+    else:
+        w = weight.reshape((weight.shape[0], 1)) 
+        return (w * T.sqr( (y_pred * (1-m_true)).sum(axis=1))).mean() + \
+            (w * T.sqr(y_pred.sum(axis=1) - y_true)).mean()
+        
 def mean_squared_error(y_true, y_pred, weight=None):
     if weight is not None:
         return T.sqr(weight.reshape((weight.shape[0], 1)) * (y_pred - y_true)).mean()
