@@ -9,8 +9,7 @@ epsilon = 1.0e-9
 def bbox_mass(y_true, y_pred):
     m_true = y_true[:, 1:]
     y_true = y_true[:, 0]
-    return T.sqr( (y_pred * (1-m_true)).sum(axis=1)).mean() + \
-        T.sqr( y_pred.sum(axis=1) - y_true).mean()
+    return T.sqr( y_pred.sum(axis=1) - y_true) + 0.1*T.sqr(y_pred * (1-m_true)).sum(axis=1)
         
 def mean_squared_error(y_true, y_pred):
     return T.sqr(y_pred - y_true).mean(axis=-1)

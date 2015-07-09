@@ -129,7 +129,7 @@ class Model(object):
         self._predict = theano.function(predict_ins, self.y_test, 
             allow_input_downcast=True, mode=theano_mode)
         self._predict_layer = theano.function(predict_ins, 
-                                               self.get_output(train=False, layer=-3), 
+                                               self.get_output(train=False, layer=-2), 
                                                allow_input_downcast=True, mode=theano_mode)                              
         self._test = theano.function(test_ins, test_score, 
             allow_input_downcast=True, mode=theano_mode)
