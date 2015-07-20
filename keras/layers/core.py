@@ -5,11 +5,10 @@ import theano
 import theano.tensor as T
 import numpy as np
 
-from .. import activations, initializations
+from .. import activations, initializations, regularizers, constraints
 from ..utils.theano_utils import shared_zeros, floatX
 from ..utils.generic_utils import make_tuple
-from ..regularizers import ActivityRegularizer
-from .. import constraints
+from ..regularizers import ActivityRegularizer, Regularizer
 
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from six.moves import zip
@@ -157,7 +156,7 @@ class Merge(object):
             for output in o:
                 if output not in res:
                     res.append(output)
-        return res
+        return res   
 
     @property
     def input(self):
@@ -185,7 +184,7 @@ class Merge(object):
         return {"name":self.__class__.__name__,
             "layers":[l.get_config() for l in self.layers],
             "mode":self.mode}
-
+  
 
 class Dropout(MaskedLayer):
     '''
@@ -250,6 +249,21 @@ class Reshape(Layer):
         return {"name":self.__class__.__name__,
             "dims":self.dims}
 
+class Permute(Layer):
+    '''
+        Permute the dimensions of the data according to the given tuple
+    '''
+    def __init__(self, dims):
+        super(Permute,self).__init__()
+        self.dims = dims
+
+    def get_output(self, train):
+        X = self.get_input(train)
+        return X.dimshuffle((0,) + self.dims)
+
+    def get_config(self):
+        return {"name":self.__class__.__name__,
+            "dims":self.dims}
 
 class Flatten(Layer):
     '''
@@ -308,17 +322,25 @@ class Dense(Layer):
         self.params = [self.W, self.b]
 
         self.regularizers = []
-        if W_regularizer:
-            W_regularizer.set_param(self.W)
-            self.regularizers.append(W_regularizer)
-        if b_regularizer:
-            b_regularizer.set_param(self.b)
-            self.regularizers.append(b_regularizer)
-        if activity_regularizer:
-            activity_regularizer.set_layer(self)
-            self.regularizers.append(activity_regularizer)
+        
+        self.W_regularizer = regularizers.get(W_regularizer)
+        if self.W_regularizer:
+            self.W_regularizer.set_param(self.W)
+            self.regularizers.append(self.W_regularizer)
 
-        self.constraints = [W_constraint, b_constraint]
+        self.b_regularizer = regularizers.get(b_regularizer)
+        if self.b_regularizer:
+            self.b_regularizer.set_param(self.b)
+            self.regularizers.append(self.b_regularizer)
+
+        self.activity_regularizer = regularizers.get(activity_regularizer)
+        if self.activity_regularizer:
+            self.activity_regularizer.set_layer(self)
+            self.regularizers.append(self.activity_regularizer)
+
+        self.W_constraint = constraints.get(W_constraint)
+        self.b_constraint = constraints.get(b_constraint)
+        self.constraints = [self.W_constraint, self.b_constraint]
 
         if weights is not None:
             self.set_weights(weights)
@@ -340,7 +362,12 @@ class Dense(Layer):
             "input_dim":self.input_dim,
             "output_dim":self.output_dim,
             "init":self.init.__name__,
-            "activation":self.activation.__name__}
+            "activation":self.activation.__name__,
+            "W_regularizer":self.W_regularizer.get_config() if self.W_regularizer else None,
+            "b_regularizer":self.b_regularizer.get_config() if self.b_regularizer else None,
+            "activity_regularizer":self.activity_regularizer.get_config() if self.activity_regularizer else None,
+            "W_constraint":self.W_constraint.get_config() if self.W_constraint else None,
+            "b_constraint":self.b_constraint.get_config() if self.b_constraint else None}
 
 
 class LinearSum(Layer):
@@ -402,17 +429,25 @@ class TimeDistributedDense(MaskedLayer):
         self.params = [self.W, self.b]
 
         self.regularizers = []
-        if W_regularizer:
-            W_regularizer.set_param(self.W)
-            self.regularizers.append(W_regularizer)
-        if b_regularizer:
-            b_regularizer.set_param(self.b)
-            self.regularizers.append(b_regularizer)
-        if activity_regularizer:
-            activity_regularizer.set_layer(self)
-            self.regularizers.append(activity_regularizer)
 
-        self.constraints = [W_constraint, b_constraint]
+        self.W_regularizer = regularizers.get(W_regularizer)
+        if self.W_regularizer:
+            self.W_regularizer.set_param(self.W)
+            self.regularizers.append(self.W_regularizer)
+
+        self.b_regularizer = regularizers.get(b_regularizer)
+        if self.b_regularizer:
+            self.b_regularizer.set_param(self.b)
+            self.regularizers.append(self.b_regularizer)
+
+        self.activity_regularizer = regularizers.get(activity_regularizer)
+        if self.activity_regularizer:
+            self.activity_regularizer.set_layer(self)
+            self.regularizers.append(self.activity_regularizer)
+
+        self.W_constraint = constraints.get(W_constraint)
+        self.b_constraint = constraints.get(b_constraint)
+        self.constraints = [self.W_constraint, self.b_constraint]
 
         if weights is not None:
             self.set_weights(weights)
@@ -428,7 +463,12 @@ class TimeDistributedDense(MaskedLayer):
             "input_dim":self.input_dim,
             "output_dim":self.output_dim,
             "init":self.init.__name__,
-            "activation":self.activation.__name__}
+            "activation":self.activation.__name__,            
+            "W_regularizer":self.W_regularizer.get_config() if self.W_regularizer else None,
+            "b_regularizer":self.b_regularizer.get_config() if self.b_regularizer else None,
+            "activity_regularizer":self.activity_regularizer.get_config() if self.activity_regularizer else None,
+            "W_constraint":self.W_constraint.get_config() if self.W_constraint else None,
+            "b_constraint":self.b_constraint.get_config() if self.b_constraint else None}
 
 
 class AutoEncoder(Layer):
@@ -437,12 +477,11 @@ class AutoEncoder(Layer):
         If output_reconstruction then dim(input) = dim(output)
         else dim(output) = dim(hidden)
     '''
-    def __init__(self, encoder, decoder, output_reconstruction=True, tie_weights=False, weights=None):
+    def __init__(self, encoder, decoder, output_reconstruction=True, weights=None):
 
         super(AutoEncoder, self).__init__()
 
         self.output_reconstruction = output_reconstruction
-        self.tie_weights = tie_weights
         self.encoder = encoder
         self.decoder = decoder
 
@@ -452,11 +491,12 @@ class AutoEncoder(Layer):
         self.regularizers = []
         self.constraints = []
         for layer in [self.encoder, self.decoder]:
-            self.params += layer.params
-            if hasattr(layer, 'regularizers'):
-                self.regularizers += layer.regularizers
-            if hasattr(layer, 'constraints'):
-                self.constraints += layer.constraints
+            params, regularizers, constraints = layer.get_params()
+            self.constraints += constraints
+            for p, r in zip(params, regularizers):
+                if p not in self.params:
+                    self.params.append(p)
+                    self.regularizers.append(r)
 
         if weights is not None:
             self.set_weights(weights)
@@ -489,23 +529,13 @@ class AutoEncoder(Layer):
         if not train and not self.output_reconstruction:
             return self.encoder.get_output(train)
 
-        decoded = self.decoder.get_output(train)
-
-        if self.tie_weights:
-            encoder_params = self.encoder.get_weights()
-            decoder_params = self.decoder.get_weights()
-            for dec_param, enc_param in zip(decoder_params, encoder_params):
-                if len(dec_param.shape) > 1:
-                    enc_param = dec_param.T
-
-        return decoded
+        return self.decoder.get_output(train)
 
     def get_config(self):
         return {"name":self.__class__.__name__,
                 "encoder_config":self.encoder.get_config(),
                 "decoder_config":self.decoder.get_config(),
-                "output_reconstruction":self.output_reconstruction,
-                "tie_weights":self.tie_weights}
+                "output_reconstruction":self.output_reconstruction}
 
 
 
@@ -530,17 +560,25 @@ class MaxoutDense(Layer):
         self.params = [self.W, self.b]
 
         self.regularizers = []
-        if W_regularizer:
-            W_regularizer.set_param(self.W)
-            self.regularizers.append(W_regularizer)
-        if b_regularizer:
-            b_regularizer.set_param(self.b)
-            self.regularizers.append(b_regularizer)
-        if activity_regularizer:
-            activity_regularizer.set_layer(self)
-            self.regularizers.append(activity_regularizer)
 
-        self.constraints = [W_constraint, b_constraint]
+        self.W_regularizer = regularizers.get(W_regularizer)
+        if self.W_regularizer:
+            self.W_regularizer.set_param(self.W)
+            self.regularizers.append(self.W_regularizer)
+
+        self.b_regularizer = regularizers.get(b_regularizer)
+        if self.b_regularizer:
+            self.b_regularizer.set_param(self.b)
+            self.regularizers.append(self.b_regularizer)
+
+        self.activity_regularizer = regularizers.get(activity_regularizer)
+        if self.activity_regularizer:
+            self.activity_regularizer.set_layer(self)
+            self.regularizers.append(self.activity_regularizer)
+
+        self.W_constraint = constraints.get(W_constraint)
+        self.b_constraint = constraints.get(b_constraint)
+        self.constraints = [self.W_constraint, self.b_constraint]
 
         if weights is not None:
             self.set_weights(weights)
@@ -556,4 +594,9 @@ class MaxoutDense(Layer):
             "input_dim":self.input_dim,
             "output_dim":self.output_dim,
             "init":self.init.__name__,
-            "nb_feature" : self.nb_feature}
+            "nb_feature" : self.nb_feature,
+            "W_regularizer":self.W_regularizer.get_config() if self.W_regularizer else None,
+            "b_regularizer":self.b_regularizer.get_config() if self.b_regularizer else None,
+            "activity_regularizer":self.activity_regularizer.get_config() if self.activity_regularizer else None,
+            "W_constraint":self.W_constraint.get_config() if self.W_constraint else None,
+            "b_constraint":self.b_constraint.get_config() if self.b_constraint else None}

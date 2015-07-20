@@ -8,15 +8,15 @@ from six.moves import zip
 
 def clip_norm(g, c, n):
     if c > 0:
-        g = T.switch(T.ge(n, c), g*c/n, g)
+        g = T.switch(T.ge(n, c), g * c / n, g)
     return g
 
 def kl_divergence(p, p_hat):
-    return p_hat - p + p*T.log(p/p_hat)
+    return p_hat - p + p * T.log(p / p_hat)
 
 class Optimizer(object):
     
-    def get_updates(self, params, regularizers, constraints,  loss):
+    def get_updates(self, params, constraints, loss):
         raise NotImplementedError
 
     def get_gradients(self, loss, params):
@@ -24,11 +24,13 @@ class Optimizer(object):
         grads = T.grad(loss, params)
 
         if hasattr(self, 'clipnorm') and self.clipnorm > 0:
-            norm = T.sqrt(sum([T.sum(g**2) for g in grads]))
+            norm = T.sqrt(sum([T.sum(g ** 2) for g in grads]))
             grads = [clip_norm(g, self.clipnorm, norm) for g in grads]
 
         return grads
 
+    def get_config(self):
+        return {"name":self.__class__.__name__}
 
 class SGD(Optimizer):
 
@@ -40,7 +42,7 @@ class SGD(Optimizer):
     def get_updates(self, params, constraints, loss):
         grads = self.get_gradients(loss, params)
         lr = self.lr * (1.0 / (1.0 + self.decay * self.iterations))
-        updates = [(self.iterations, self.iterations+1.)]
+        updates = [(self.iterations, self.iterations + 1.)]
 
         for p, g, c in zip(params, grads, constraints):
             m = shared_zeros(p.get_value().shape) # momentum
@@ -54,6 +56,13 @@ class SGD(Optimizer):
 
             updates.append((p, c(new_p))) # apply constraints
         return updates
+
+    def get_config(self):
+        return {"name":self.__class__.__name__,
+            "lr":self.lr,
+            "momentum":self.momentum,
+            "decay":self.decay,
+            "nesterov":self.nesterov}
 
 
 class RMSprop(Optimizer):
@@ -76,6 +85,11 @@ class RMSprop(Optimizer):
             
         return updates
 
+    def get_config(self):
+        return {"name":self.__class__.__name__,
+            "lr":self.lr,
+            "rho":self.rho,
+            "epsilon":self.epsilon}
 
 class Adagrad(Optimizer):
 
@@ -96,6 +110,10 @@ class Adagrad(Optimizer):
             updates.append((p, c(new_p))) # apply constraints
         return updates
 
+    def get_config(self):
+        return {"name":self.__class__.__name__,
+            "lr":self.lr,
+            "epsilon":self.epsilon}
 
 class Adadelta(Optimizer):
     '''
@@ -126,6 +144,11 @@ class Adadelta(Optimizer):
             updates.append((d_a, new_d_a))
         return updates
 
+    def get_config(self):
+        return {"name":self.__class__.__name__,
+            "lr":self.lr,
+            "rho":self.rho,
+            "epsilon":self.epsilon}
 
 class Adam(Optimizer):
     '''
@@ -167,6 +190,14 @@ class Adam(Optimizer):
             updates.append((p, c(p_t))) # apply constraints
         return updates
 
+    def get_config(self):
+        return {"name":self.__class__.__name__,
+            "lr":self.lr,
+            "beta_1":self.beta_1,
+            "beta_2":self.beta_2,
+            "epsilon":self.epsilon,
+            "kappa":self.kappa}
+
 # aliases
 sgd = SGD
 rmsprop = RMSprop
@@ -175,5 +206,5 @@ adadelta = Adadelta
 adam = Adam
 
 from .utils.generic_utils import get_from_module
-def get(identifier):
-    return get_from_module(identifier, globals(), 'optimizer', instantiate=True)
+def get(identifier, kwargs=None):
+    return get_from_module(identifier, globals(), 'optimizer', instantiate=True, kwargs=kwargs)

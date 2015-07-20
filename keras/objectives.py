@@ -4,7 +4,10 @@ import theano.tensor as T
 import numpy as np
 from six.moves import range
 
-epsilon = 1.0e-9
+if theano.config.floatX == 'float64':
+    epsilon = 1.0e-9
+else:
+    epsilon = 1.0e-7
 
 def bbox_mass(y_true, y_pred):
     m_true = y_true[:, 1:]
