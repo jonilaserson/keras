@@ -477,6 +477,7 @@ class Graph(Model, containers.Graph):
         ys = []
         ys_train = []
         ys_test = []
+        ys_layer = []
         train_loss = 0.
         test_loss = 0.
         for output_name in self.output_order:
@@ -484,10 +485,12 @@ class Graph(Model, containers.Graph):
             output = self.outputs[output_name]
             y_train = output.get_output(True)
             y_test = output.get_output(False)
+            y_layer = output.get_output(train=False, layer=-2)
             y = T.zeros_like(y_test)
             ys.append(y)
             ys_train.append(y_train)
             ys_test.append(y_test)
+            ys_layer.append(y_layer)
             
             train_loss += objectives.get(loss_fn)(y, y_train).mean()
             test_loss += objectives.get(loss_fn)(y, y_test).mean()
@@ -510,6 +513,8 @@ class Graph(Model, containers.Graph):
             allow_input_downcast=True, mode=theano_mode)
         self._predict = theano.function(inputs=ins, outputs=ys_test, 
             allow_input_downcast=True, mode=theano_mode)
+        self._predict_layer = theano.function(inputs=ins, outputs=ys_layer, 
+                                              allow_input_downcast=True, mode=theano_mode)       
 
     def train_on_batch(self, data):
         # data is a dictionary mapping output and input names to arrays
