@@ -76,7 +76,7 @@ def standardize_weights(y, sample_weight=None, class_weight=None):
             y_classes = y
         return np.expand_dims(np.array(list(map(lambda x: class_weight[x], y_classes))), 1)
     else:
-        return np.ones(y.shape[:-1] + (1,))
+        return np.ones((y.shape[0],1))
 
 
 def model_from_yaml(yaml_string):
@@ -290,8 +290,8 @@ class Sequential(Model, containers.Sequential):
         # target of model
         self.y = T.zeros_like(self.y_train)
 
-        self.weights = T.ones_like(self.y_train)
-
+        self.weights = T.matrix(dtype=theano.config.floatX) # Forces 2D
+        
         train_loss = self.loss(self.y, self.y_train, self.weights)
         test_loss = self.loss(self.y, self.y_test, self.weights)
 
@@ -351,7 +351,7 @@ class Sequential(Model, containers.Sequential):
         y = standardize_y(y)
 
         if sample_weight is None:
-            sample_weight = np.ones(list(y.shape[0:-1]) + [1])
+            sample_weight = np.ones((y.shape[0],1))
         else:
             sample_weight = standardize_y(sample_weight)
 
@@ -365,7 +365,7 @@ class Sequential(Model, containers.Sequential):
     def test_on_batch(self, X, y, accuracy=False):
         X = standardize_X(X)
         y = standardize_y(y)
-        sample_weight = np.ones(y.shape[:-1] + (1,))
+        sample_weight = np.ones((y.shape[0],1))
         ins = X + [y, sample_weight]
         if accuracy:
             return self._test_with_acc(*ins)
@@ -401,7 +401,8 @@ class Sequential(Model, containers.Sequential):
                     X_val may be a numpy array or a list of numpy arrays depending on your model input.")
             X_val = standardize_X(X_val)
             y_val = standardize_y(y_val)
-            val_ins = X_val + [y_val, np.ones(y_val.shape[:-1] + (1,))]
+            val_ins = X_val + [y_val, np.ones((y_val.shape[0],1))]
+            w = np.ones((y_val.shape[0],1))  
 
         if show_accuracy:
             f = self._train_with_acc

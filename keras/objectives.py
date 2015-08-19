@@ -9,6 +9,39 @@ if theano.config.floatX == 'float64':
 else:
     epsilon = 1.0e-7
 
+def bbox_mse(y_true, y_pred):
+    # y_true and y_pred are both (BATCH_SIZE, 5, 36, 71).
+    m_true = y_true[:, 0]
+    m_pred = y_pred[:, 0]
+    m_pred = T.clip(m_pred, epsilon, 1.0 - epsilon)    
+    bce = T.nnet.binary_crossentropy(m_pred, m_true).sum(axis=(-2,-1))
+
+    b_true = y_true[:, 1:]
+    b_pred = y_pred[:, 1:]
+    mse = T.sqr(y_true[:, :1] * (b_pred[:, 1:] - b_true[:, 1:])).sum(axis=(-3,-2,-1))
+    return bce + mse
+
+def bbox_jaccard(y_true, y_pred):
+    # y_true and y_pred are both (BATCH_SIZE, 5, 36, 71).
+    m_true = y_true[:, 0]
+    m_pred = y_pred[:, 0]
+    m_pred = T.clip(m_pred, epsilon, 1.0 - epsilon)    
+    bce = T.nnet.binary_crossentropy(m_pred, m_true).mean(axis=(-2,-1))
+
+    # Find intersection rectangle.
+    top = T.maximum(y_true[:,1], y_pred[:,1])
+    bottom = T.minimum(y_true[:,2], y_pred[:,2])
+    left = T.maximum(y_true[:,3], y_pred[:,3])
+    right = T.minimum(y_true[:,4], y_pred[:,4])
+    intersection = T.maximum(bottom - top, 0) * T.maximum(right - left, 0)    
+    area_true = (y_true[:,2] - y_true[:,1]) * (y_true[:,4] - y_true[:,3])
+    area_pred = T.maximum(y_pred[:,2] - y_pred[:,1], 0) * T.maximum(y_pred[:,4] - y_pred[:,3], 0)
+    union = T.maximum(area_true + area_pred - intersection, epsilon)
+    jaccard = (y_true[:,0] * (1 - intersection / union)).sum(axis=(-2,-1)) \
+        / (epsilon + y_true[:,0].sum(axis=(-2,-1)))
+    
+    return  bce + jaccard
+
 def bbox_mass(y_true, y_pred):
     m_true = y_true[:, 1:]
     y_true = y_true[:, 0]
