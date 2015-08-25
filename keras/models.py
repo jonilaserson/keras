@@ -418,10 +418,7 @@ class Sequential(Model, containers.Sequential):
         X = standardize_X(X)
         y = standardize_y(y)
 
-        if sample_weight is None:
-            sample_weight = np.ones((y.shape[0],1))
-        else:
-            sample_weight = standardize_weights(y, class_weight=class_weight, sample_weight=sample_weight)
+        sample_weight = standardize_weights(y, class_weight=class_weight, sample_weight=sample_weight)
 
         ins = X + [y, sample_weight]
         if accuracy:
@@ -432,7 +429,6 @@ class Sequential(Model, containers.Sequential):
     def test_on_batch(self, X, y, accuracy=False, sample_weight=None):
         X = standardize_X(X)
         y = standardize_y(y)
-        #sample_weight = np.ones((y.shape[0],1))
         sample_weight = standardize_weights(y, sample_weight=sample_weight)
         ins = X + [y, sample_weight]
         if accuracy:
@@ -594,7 +590,7 @@ class Graph(Model, containers.Graph):
             else:
                 mask = None
 
-            weight = T.ones_like(y_test)
+            weight = T.matrix(dtype=theano.config.floatX) # Forces 2D
             weights.append(weight)
             weighted_loss = weighted_objective(objectives.get(loss_fn))
             train_loss += weighted_loss(y, y_train, weight, mask)
