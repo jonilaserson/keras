@@ -3,10 +3,14 @@ from __future__ import absolute_import
 
 import theano
 import theano.tensor as T
+from theano.tensor.signal import downsample
 
 from .. import activations, initializations, regularizers, constraints
-from ..utils.theano_utils import shared_zeros
+from ..utils.theano_utils import shared_zeros, on_gpu
 from ..layers.core import Layer
+
+if on_gpu():
+    from theano.sandbox.cuda import dnn
 
 
 class Convolution1D(Layer):
@@ -148,16 +152,30 @@ class Convolution2D(Layer):
     def get_output(self, train):
         X = self.get_input(train)
         border_mode = self.border_mode
-        if border_mode == 'same':
-            border_mode = 'full'
+        if on_gpu() and dnn.dnn_available():
+            if border_mode == 'same':
+                assert(self.subsample == (1, 1))
+                pad_x = (self.nb_row - self.subsample[0]) // 2
+                pad_y = (self.nb_col - self.subsample[1]) // 2
+                conv_out = dnn.dnn_conv(img=X,
+                                        kerns=self.W,
+                                        border_mode=(pad_x, pad_y))
+            else:
+                conv_out = dnn.dnn_conv(img=X,
+                                        kerns=self.W,
+                                        border_mode=border_mode,
+                                        subsample=self.subsample)
+        else:
+            if border_mode == 'same':
+                border_mode = 'full'
 
-        conv_out = T.nnet.conv.conv2d(X, self.W,
-                                      border_mode=border_mode,
-                                      subsample=self.subsample)
-        if self.border_mode == 'same':
-            shift_x = (self.nb_row - 1) // 2
-            shift_y = (self.nb_col - 1) // 2
-            conv_out = conv_out[:, :, shift_x:X.shape[2] + shift_x, shift_y:X.shape[3] + shift_y]
+            conv_out = T.nnet.conv.conv2d(X, self.W,
+                                          border_mode=border_mode,
+                                          subsample=self.subsample)
+            if self.border_mode == 'same':
+                shift_x = (self.nb_row - 1) // 2
+                shift_y = (self.nb_col - 1) // 2
+                conv_out = conv_out[:, :, shift_x:X.shape[2] + shift_x, shift_y:X.shape[3] + shift_y]
 
         return self.activation(conv_out + self.b.dimshuffle('x', 0, 'x', 'x'))
 
@@ -195,7 +213,7 @@ class MaxPooling1D(Layer):
     def get_output(self, train):
         X = self.get_input(train)
         X = T.reshape(X, (X.shape[0], X.shape[1], X.shape[2], 1)).dimshuffle(0, 2, 1, 3)
-        output = T.signal.downsample.max_pool_2d(X, ds=self.poolsize, st=self.st, ignore_border=self.ignore_border)
+        output = downsample.max_pool_2d(X, ds=self.poolsize, st=self.st, ignore_border=self.ignore_border)
         output = output.dimshuffle(0, 2, 1, 3)
         return T.reshape(output, (output.shape[0], output.shape[1], output.shape[2]))
 
@@ -203,8 +221,7 @@ class MaxPooling1D(Layer):
         return {"name": self.__class__.__name__,
                 "stride": self.stride,
                 "pool_length": self.pool_length,
-                "ignore_border": self.ignore_border,
-                "subsample_length": self.subsample_length}
+                "ignore_border": self.ignore_border}
 
 
 class MaxPooling2D(Layer):
@@ -217,7 +234,7 @@ class MaxPooling2D(Layer):
 
     def get_output(self, train):
         X = self.get_input(train)
-        output = T.signal.downsample.max_pool_2d(X, ds=self.poolsize, st=self.stride, ignore_border=self.ignore_border)
+        output = downsample.max_pool_2d(X, ds=self.poolsize, st=self.stride, ignore_border=self.ignore_border)
         return output
 
     def get_config(self):
