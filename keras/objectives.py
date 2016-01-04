@@ -9,25 +9,19 @@ if theano.config.floatX == 'float64':
 else:
     epsilon = 1.0e-7
 
-def bbox_mse(y_true, y_pred):
-    # y_true and y_pred are both (BATCH_SIZE, 5, 36, 71).
-    m_true = y_true[:, 0]
-    m_pred = y_pred[:, 0]
+def bbox_bce(m_true, m_pred):
     m_pred = T.clip(m_pred, epsilon, 1.0 - epsilon)
-    bce = T.nnet.binary_crossentropy(m_pred, m_true).sum(axis=(-2,-1))
+    return T.nnet.binary_crossentropy(m_pred, m_true).mean(axis=(-2,-1))
 
-    b_true = y_true[:, 1:]
-    b_pred = y_pred[:, 1:]
-    mse = T.sqr(y_true[:, :1] * (b_pred[:, 1:] - b_true[:, 1:])).sum(axis=(-3,-2,-1))
-    return bce + mse
+
+def masked_mse(m_true, y_true, y_pred):
+    # m_true is (BATCH_SIZE, H, W)
+    # y_pred and y_true are: (BATCH_SIZE, k, H, W)
+    return (m_true * T.sqr(y_pred - y_true).sum(axis=-3)).sum(axis=(-2,-1)) \
+        / (epsilon + m_true.sum(axis=(-2,-1)))
+
 
 def bbox_jaccard(y_true, y_pred):
-    # y_true and y_pred are both (BATCH_SIZE, 5, 36, 71).
-    m_true = y_true[:, 0]
-    m_pred = y_pred[:, 0]
-    m_pred = T.clip(m_pred, epsilon, 1.0 - epsilon)
-    bce = T.nnet.binary_crossentropy(m_pred, m_true).mean(axis=(-2,-1))
-
     # Find intersection rectangle.
     top = T.maximum(y_true[:,1], y_pred[:,1])
     bottom = T.minimum(y_true[:,2], y_pred[:,2])
@@ -39,15 +33,18 @@ def bbox_jaccard(y_true, y_pred):
     union = T.maximum(area_true + area_pred - intersection, epsilon)
     jaccard = (y_true[:,0] * (1 - intersection / union)).sum(axis=(-2,-1)) \
         / (epsilon + y_true[:,0].sum(axis=(-2,-1)))
+    return jaccard
 
-#    if 0:
-#        d_pred = y_pred[:, 5]                      # d_pred is (BATCH_SIZE, H, W).
-#        d_pred = T.maximum(0, d_pred)
-#        n_true = y_true[:, 5].max(axis=(-2,-1))  # n_true is now (BATCH_SIZE,)
-#        d_true = y_true[:, 5] > 0                # d_true is (BATCH_SIZE, H, W)
-#        mass = T.abs_(d_pred.sum(axis=(-2,-1)) - n_true) + T.abs_(d_pred * (1 - d_true)).sum(axis=(-2,-1))
+def bbox_only(y_true, y_pred):
+    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
+    jaccard = bbox_jaccard(y_true[:, :5], y_pred[:, :5])
+    return bce + jaccard
 
-    return  bce + jaccard #+ mass
+
+def bbox_with_xy(y_true, y_pred):
+    mse = masked_mse(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
+    return bbox_only(y_true, y_pred) + mse
+
 
 def bbox_mass(y_true, y_pred):
     # y_true is (BATCH_SIZE, 2, H, W).
