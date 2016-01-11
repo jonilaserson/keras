@@ -21,6 +21,14 @@ def masked_mse(m_true, y_true, y_pred):
         / (epsilon + m_true.sum(axis=(-2,-1)))
 
 
+def masked_mae(m_true, y_true, y_pred):
+    # m_true is (BATCH_SIZE, H, W)
+    # y_pred and y_true are: (BATCH_SIZE, k, H, W)
+    return (m_true * T.abs_(y_pred - y_true).sum(axis=-3)).sum(axis=(-2,-1)) \
+        / (epsilon + m_true.sum(axis=(-2,-1)))
+
+
+
 def bbox_jaccard(y_true, y_pred):
     # Find intersection rectangle.
     top = T.maximum(y_true[:,1], y_pred[:,1])
@@ -42,9 +50,28 @@ def bbox_only(y_true, y_pred):
 
 
 def bbox_with_xy(y_true, y_pred):
+    jaccard = bbox_jaccard(y_true[:, :5], y_pred[:, :5])
+    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
+    mae = masked_mae(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
     mse = masked_mse(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
-    return bbox_only(y_true, y_pred) + mse
+    return bce + mae + mse + jaccard
 
+def xy_only(y_true, y_pred):
+    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
+    mae = masked_mae(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
+    mse = masked_mse(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
+    return bce + mae + mse
+
+def xy_only_l1(y_true, y_pred):
+    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
+    mae = masked_mae(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
+    return bce + mae
+
+
+def xy_only_l2(y_true, y_pred):
+    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
+    mse = masked_mse(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
+    return bce + mse
 
 def bbox_mass(y_true, y_pred):
     # y_true is (BATCH_SIZE, 2, H, W).
