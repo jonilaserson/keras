@@ -53,8 +53,7 @@ def bbox_with_xy(y_true, y_pred):
     jaccard = bbox_jaccard(y_true[:, :5], y_pred[:, :5])
     bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
     mae = masked_mae(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
-    mse = masked_mse(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
-    return bce + mae + mse + jaccard
+    return bce + mae + jaccard
 
 def xy_only(y_true, y_pred):
     bce = bbox_bce(y_true[:, 0], y_pred[:, 0])

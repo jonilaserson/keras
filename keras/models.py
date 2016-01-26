@@ -477,7 +477,7 @@ class Sequential(Model, containers.Sequential):
                 sample_weight_val = np.ones(y_val.shape[:1] + (1,))
             val_ins = X_val + [y_val, sample_weight_val]
 
-        if shoke_accuracy:
+        if show_accuracy:
             f = self._train_with_acc
             out_labels = ['loss', 'acc']
         else:
