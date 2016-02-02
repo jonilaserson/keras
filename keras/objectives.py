@@ -9,27 +9,27 @@ if theano.config.floatX == 'float64':
 else:
     epsilon = 1.0e-7
 
-def bbox_bce(m_true, m_pred):
-    m_pred = T.clip(m_pred, epsilon, 1.0 - epsilon)
-    return T.nnet.binary_crossentropy(m_pred, m_true).mean(axis=(-2,-1))
+def bce(y_true, y_pred):
+    y_pred = T.clip(y_pred[:, 0], epsilon, 1.0 - epsilon)
+    return T.nnet.binary_crossentropy(y_pred, y_true[:, 0]).mean(axis=(-2,-1))
 
 
-def masked_mse(m_true, y_true, y_pred):
+def masked_xy_loss(m_true, y_true, y_pred, l_func):
     # m_true is (BATCH_SIZE, H, W)
     # y_pred and y_true are: (BATCH_SIZE, k, H, W)
-    return (m_true * T.sqr(y_pred - y_true).sum(axis=-3)).sum(axis=(-2,-1)) \
+    return (m_true * l_func(y_pred - y_true).sum(axis=-3)).sum(axis=(-2,-1)) \
         / (epsilon + m_true.sum(axis=(-2,-1)))
 
 
-def masked_mae(m_true, y_true, y_pred):
-    # m_true is (BATCH_SIZE, H, W)
-    # y_pred and y_true are: (BATCH_SIZE, k, H, W)
-    return (m_true * T.abs_(y_pred - y_true).sum(axis=-3)).sum(axis=(-2,-1)) \
-        / (epsilon + m_true.sum(axis=(-2,-1)))
+def xy_l1(y_true, y_pred):
+    return masked_xy_loss(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7], T.abs_)
 
 
+def xy_l2(y_true, y_pred):
+    return masked_xy_loss(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7], T.sqr)
 
-def bbox_jaccard(y_true, y_pred):
+
+def jaccard(y_true, y_pred):
     # Find intersection rectangle.
     top = T.maximum(y_true[:,1], y_pred[:,1])
     bottom = T.minimum(y_true[:,2], y_pred[:,2])
@@ -43,34 +43,6 @@ def bbox_jaccard(y_true, y_pred):
         / (epsilon + y_true[:,0].sum(axis=(-2,-1)))
     return jaccard
 
-def bbox_only(y_true, y_pred):
-    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
-    jaccard = bbox_jaccard(y_true[:, :5], y_pred[:, :5])
-    return bce + jaccard
-
-
-def bbox_with_xy(y_true, y_pred):
-    jaccard = bbox_jaccard(y_true[:, :5], y_pred[:, :5])
-    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
-    mae = masked_mae(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
-    return bce + mae + jaccard
-
-def xy_only(y_true, y_pred):
-    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
-    mae = masked_mae(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
-    mse = masked_mse(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
-    return bce + mae + mse
-
-def xy_only_l1(y_true, y_pred):
-    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
-    mae = masked_mae(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
-    return bce + mae
-
-
-def xy_only_l2(y_true, y_pred):
-    bce = bbox_bce(y_true[:, 0], y_pred[:, 0])
-    mse = masked_mse(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7])
-    return bce + mse
 
 def bbox_mass(y_true, y_pred):
     # y_true is (BATCH_SIZE, 2, H, W).
@@ -134,5 +106,19 @@ mape = MAPE = mean_absolute_percentage_error
 msle = MSLE = mean_squared_logarithmic_error
 
 from .utils.generic_utils import get_from_module
-def get(identifier):
-    return get_from_module(identifier, globals(), 'objective')
+def get(identifiers_str):
+    identifiers_lst = identifiers_str.split(',')
+    use_sigmoid = 'sigmoid' in identifiers_lst
+    funcs = [get_from_module(identifier, globals(), 'objective') for identifier in identifiers_lst \
+                                                                 if identifier <> 'sigmoid']
+    def sum_of_funcs(y_true, y_pred):
+        if use_sigmoid:
+            y_pred = T.concatenate([T.nnet.sigmoid(y_pred[:, 0:1]), y_pred[:, 1:]], axis=1)
+        res = 0
+        for f in funcs:
+            res += f(y_true, y_pred)
+        return res
+    return sum_of_funcs
+
+
+
