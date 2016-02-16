@@ -2,64 +2,54 @@ from __future__ import absolute_import
 import numpy as np
 from . import backend as K
 
-if theano.config.floatX == 'float64':
-    epsilon = 1.0e-9
-else:
-    epsilon = 1.0e-7
-
 def bce(y_true, y_pred):
-    y_pred = T.clip(y_pred[:, 0], epsilon, 1.0 - epsilon)
-    return T.nnet.binary_crossentropy(y_pred, y_true[:, 0]).mean(axis=(-2,-1))
+    y_pred = K.clip(y_pred[:, 0], K.epsilon(), 1.0 - K.epsilon())
+    return K.mean(K.binary_crossentropy(y_pred, y_true[:, 0]), axis=(-2,-1))
 
 
 def masked_xy_loss(m_true, y_true, y_pred, l_func):
     # m_true is (BATCH_SIZE, H, W)
     # y_pred and y_true are: (BATCH_SIZE, k, H, W)
-    return (m_true * l_func(y_pred - y_true).sum(axis=-3)).sum(axis=(-2,-1)) \
-        / (epsilon + m_true.sum(axis=(-2,-1)))
+    return K.sum(m_true * K.sum(l_func(y_pred - y_true), axis=-3), axis=(-2,-1)) \
+        / K.sum(K.epsilon() + m_true, axis=(-2,-1))
 
 
 def xy_l1(y_true, y_pred):
-    return masked_xy_loss(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7], T.abs_)
+    return masked_xy_loss(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7], K.abs)
 
 
 def xy_l2(y_true, y_pred):
-    return masked_xy_loss(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7], T.sqr)
+    return masked_xy_loss(y_true[:, 0] * y_true[:, 7], y_true[:, 5:7], y_pred[:, 5:7], K.square)
+
+
+def bb_l1(y_true, y_pred):
+    return masked_xy_loss(y_true[:, 0], y_true[:, 1:5], y_pred[:, 1:5], K.abs)
 
 
 def jaccard(y_true, y_pred):
     # Find intersection rectangle.
-    top = T.maximum(y_true[:,1], y_pred[:,1])
-    bottom = T.minimum(y_true[:,2], y_pred[:,2])
-    left = T.maximum(y_true[:,3], y_pred[:,3])
-    right = T.minimum(y_true[:,4], y_pred[:,4])
-    intersection = T.maximum(bottom - top, 0) * T.maximum(right - left, 0)
+    top = K.maximum(y_true[:,1], y_pred[:,1])
+    bottom = K.minimum(y_true[:,2], y_pred[:,2])
+    left = K.maximum(y_true[:,3], y_pred[:,3])
+    right = K.minimum(y_true[:,4], y_pred[:,4])
+    intersection = K.maximum(bottom - top, 0) * K.maximum(right - left, 0)
     area_true = (y_true[:,2] - y_true[:,1]) * (y_true[:,4] - y_true[:,3])
-    area_pred = T.maximum(y_pred[:,2] - y_pred[:,1], 0) * T.maximum(y_pred[:,4] - y_pred[:,3], 0)
-    union = T.maximum(area_true + area_pred - intersection, epsilon)
-    jaccard = (y_true[:,0] * (1 - intersection / union)).sum(axis=(-2,-1)) \
-        / (epsilon + y_true[:,0].sum(axis=(-2,-1)))
+    area_pred = K.maximum(y_pred[:,2] - y_pred[:,1], 0) * K.maximum(y_pred[:,4] - y_pred[:,3], 0)
+    union = K.maximum(area_true + area_pred - intersection, K.epsilon())
+    jaccard = K.sum(y_true[:,0] * (1 - intersection / union), axis=(-2,-1)) \
+        / K.sum(K.epsilon() + y_true[:,0], axis=(-2,-1))
     return jaccard
 
-
-def bbox_mass(y_true, y_pred):
-    # y_true is (BATCH_SIZE, 2, H, W).
-    # y_pred is (BATCH_SIZE, 6, H, W).
-    d_pred = (y_pred[:, 5] + T.abs_(y_pred[:, 5])) / 2.0 # d_pred is (BATCH_SIZE, H, W).
-    n_true = y_true[:, 0].max(axis=(-2,-1))  # n_true is now (BATCH_SIZE,)
-    d_true = y_true[:, 0] > 0                # d_true is (BATCH_SIZE, H, W)
-    mass = T.abs_(d_pred.sum(axis=(-2,-1)) - n_true) + T.abs_(d_pred * (1 - d_true)).sum(axis=(-2,-1))
-    return mass
 
 def mse_plus_mae(y_true, y_pred):
    return mean_squared_error(y_true, y_pred) + mean_absolute_error(y_true, y_pred)
 
 def mean_squared_error(y_true, y_pred):
-    return T.sqr(y_pred - y_true).mean(axis=-1)
+    return K.mean(K.square(y_pred - y_true), axis=-1)
 
 
 def mean_absolute_error(y_true, y_pred):
-    return T.abs_(y_pred - y_true).mean(axis=-1)
+    return K.mean(K.abs(y_pred - y_true), axis=-1)
 
 
 def mean_absolute_percentage_error(y_true, y_pred):
@@ -112,16 +102,18 @@ from .utils.generic_utils import get_from_module
 def get(identifiers_str):
     identifiers_lst = identifiers_str.split(',')
     use_sigmoid = 'sigmoid' in identifiers_lst
-    funcs = [get_from_module(identifier, globals(), 'objective') for identifier in identifiers_lst \
-                                                                 if identifier <> 'sigmoid']
+    identifiers_lst = [identifier_str.split('*') for identifier_str in identifiers_lst
+                                                  if identifier_str <> 'sigmoid']
+
+    funcs = [get_from_module(ident[-1], globals(), 'objective') for ident in identifiers_lst]
+    coeff = [1 if len(ident) == 1 else float(ident[0]) for ident in identifiers_lst]
+
     def sum_of_funcs(y_true, y_pred):
         if use_sigmoid:
-            y_pred = T.concatenate([T.nnet.sigmoid(y_pred[:, 0:1]), y_pred[:, 1:]], axis=1)
+            y_pred = K.concatenate([K.sigmoid(y_pred[:, 0:1]), y_pred[:, 1:]], axis=1)
         res = 0
-        for f in funcs:
-            res += f(y_true, y_pred)
+        for c, f in zip(coeff, funcs):
+            res += c * f(y_true, y_pred)
         return res
     return sum_of_funcs
-
-
 
